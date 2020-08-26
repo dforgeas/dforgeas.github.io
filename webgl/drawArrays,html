@@ -1,0 +1,214 @@
+<html><body style="margin: 0">
+<canvas id="container" style="width: 100vw; height: 100vh; display: block"></canvas>
+
+<script>
+  let canvas; let gl;
+  window.addEventListener('resize', () => {
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  if (canvas.width != width || canvas.height != height) {
+    canvas.width = width;
+    canvas.height = height;
+          
+    // we could call render() here but no need because we render continuously
+	gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  });
+  document.addEventListener('DOMContentLoaded', () => {
+
+canvas = document.getElementById('container');
+canvas.width = canvas.clientWidth;
+canvas.height = canvas.clientHeight;
+gl = canvas.getContext('webgl', { antialias: true });
+
+[["vendor", gl.VENDOR], ["renderer", gl.RENDERER], ["version", gl.VERSION],
+ ["shading language", gl.SHADING_LANGUAGE_VERSION]].forEach(
+  function(i) {
+  console.info(i[0] + ": "+ gl.getParameter(i[1]));
+  });
+
+gl.clearColor(0, 0, 0, 1);
+
+const sourceV = `
+  attribute vec2 a_position;
+  attribute vec2 a_center;
+  uniform float u_angle;
+  attribute vec3 a_colour;
+  varying vec3 v_colour;
+
+  void main() {
+    vec2 pos = a_position;
+	if (pos.x < 1.0) {
+	  pos.x = pos.x * 255.0 / 256.0;
+	}
+	if (pos.y < 1.0) {
+	  pos.y = pos.y * 255.0 / 256.0;
+	}
+	/*if (a_colour.r == 0.1) { gl_Position = vec4(a_center * 2.0 - 1.0, 1, 1); } else {*/
+	float c = cos(u_angle);
+	float s = sin(u_angle);
+	pos -= a_center;
+	pos = vec2(c * pos.x - s * pos.y, s * pos.x + c * pos.y);
+	pos += a_center;
+    gl_Position = vec4(pos * 2.0 - 1.0, 1, 1);
+	/*}*/
+    v_colour = a_colour;
+	gl_PointSize = 2.0;
+  }
+`;
+
+const shaderV = gl.createShader(gl.VERTEX_SHADER);
+gl.shaderSource(shaderV, sourceV);
+gl.compileShader(shaderV);
+
+if (!gl.getShaderParameter(shaderV, gl.COMPILE_STATUS)) {
+  console.error(gl.getShaderInfoLog(shaderV));
+  throw new Error('Failed to compile vertex shader');
+}
+
+const sourceF = `
+  precision mediump float;
+  varying vec3 v_colour;
+
+  void main() {
+    gl_FragColor = vec4(v_colour, 1);
+  }
+`;
+
+const shaderF = gl.createShader(gl.FRAGMENT_SHADER);
+gl.shaderSource(shaderF, sourceF);
+gl.compileShader(shaderF);
+
+if (!gl.getShaderParameter(shaderF, gl.COMPILE_STATUS)) {
+  console.error(gl.getShaderInfoLog(shaderF));
+  throw new Error('Failed to compile fragment shader');
+}
+
+const program = gl.createProgram();
+gl.attachShader(program, shaderV);
+gl.attachShader(program, shaderF);
+gl.linkProgram(program);
+
+if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+  console.error(gl.getProgramInfoLog(program));
+  throw new Error('Failed to link program');
+}
+
+gl.useProgram(program);
+
+// 64x64x2 triangles, 3 vertexes each, X Y R G B each
+const bufferData = new Uint8Array(64*64*2*3*(2 + 3));
+// 64x64x2 triangles, 3 vertexes each, X Y of center each as float
+const rotationData = new Float32Array(64*64*2*3*2);
+let vi = 0; let ri = 0;
+for (let x = 0; x < 256; x += 4) for (let y = 0; y < 256; y += 4)
+{
+   const c0 = 0;
+   const c1 = 255;
+   const c2 = 128;
+   const c3 = 100;
+   const c4 = c2 + c2 - c3;
+   // 1st triangle
+   bufferData[vi] = x; bufferData[vi + 1] = y;
+   bufferData[vi + 2] = c0;
+   bufferData[vi + 3] = c2 / 2;
+   bufferData[vi + 4] = c1;
+   vi += 5;
+   
+   bufferData[vi] = x; bufferData[vi + 1] = (y+4 < 255 ? y+4: 255);
+   bufferData[vi + 2] = c0;
+   bufferData[vi + 3] = c3 / 2;
+   bufferData[vi + 4] = c1;  
+   vi += 5;
+   
+   bufferData[vi] = (x+4 < 255 ? x+4 : 255); bufferData[vi + 1] = y;
+   bufferData[vi + 2] = c0;
+   bufferData[vi + 3] = c4 / 2;
+   bufferData[vi + 4] = c1;
+   vi += 5;
+   
+   rotationData[ri] = (3 * x + 4) / (256 * 3);
+   rotationData[ri + 1] = (3 * y + 4) / (256 * 3);
+
+   rotationData[ri + 4] = rotationData[ri + 2] = rotationData[ri];
+   rotationData[ri + 5] = rotationData[ri + 3] = rotationData[ri + 1];
+   ri += 6
+   
+   // 2nd triangle
+   bufferData[vi] = (x+4 < 255 ? x+4 : 255); bufferData[vi + 1] = y;
+   bufferData[vi + 2] = c1;
+   bufferData[vi + 3] = c2;
+   bufferData[vi + 4] = c0;
+   vi += 5;
+   
+   bufferData[vi] = (x+4 < 255 ? x+4 : 255); bufferData[vi + 1] = (y+4 < 255 ? y+4: 255);
+   bufferData[vi + 2] = c1;
+   bufferData[vi + 3] = c3;
+   bufferData[vi + 4] = c0;  
+   vi += 5;
+   
+   bufferData[vi] = x; bufferData[vi + 1] = (y+4 < 255 ? y+4: 255);
+   bufferData[vi + 2] = c1;
+   bufferData[vi + 3] = c4;
+   bufferData[vi + 4] = c0;  
+   vi += 5;
+   
+   rotationData[ri] = (3 * x + 8) / (256 * 3);
+   rotationData[ri + 1] = (3 * y + 8) / (256 * 3);
+
+   rotationData[ri + 4] = rotationData[ri + 2] = rotationData[ri];
+   rotationData[ri + 5] = rotationData[ri + 3] = rotationData[ri + 1];
+   ri += 6
+}
+console.info(vi + " = " + bufferData.byteLength);
+console.info(ri + " = " + rotationData.length);
+
+const attributeBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, bufferData, gl.STATIC_DRAW);
+
+const rotationAttributeBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, rotationAttributeBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, rotationData, gl.STATIC_DRAW);
+
+gl.bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
+const posattribute = gl.getAttribLocation(program, 'a_position');
+gl.enableVertexAttribArray(posattribute);
+gl.vertexAttribPointer(posattribute, 2, gl.UNSIGNED_BYTE, true, 5, 0);
+
+const colourAttribute = gl.getAttribLocation(program, 'a_colour');
+gl.vertexAttrib3f(colourAttribute, 0, 1.0, 0); // default colour when attrib array is disabled
+gl.vertexAttribPointer(colourAttribute, 3, gl.UNSIGNED_BYTE, true, 5, 2);
+
+gl.bindBuffer(gl.ARRAY_BUFFER, rotationAttributeBuffer);
+const centerAttribute = gl.getAttribLocation(program, 'a_center');
+gl.enableVertexAttribArray(centerAttribute);
+gl.vertexAttribPointer(centerAttribute, 2, gl.FLOAT, false, 0, 0);
+
+const angleLocation = gl.getUniformLocation(program, 'u_angle');
+
+gl.disable(gl.CULL_FACE);
+//gl.cullFace(gl.FRONT);
+gl.disable(gl.BLEND);
+gl.blendFunc(gl.SRC_ALPHA, gl.DST_ALPHA);
+//gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+function render(timestamp){
+/*	if (gl.getParameter(gl.CULL_FACE_MODE) === gl.BACK) {
+		gl.cullFace(gl.FRONT);
+	} else {
+		gl.cullFace(gl.BACK);
+	}*/
+	gl.uniform1f(angleLocation, (timestamp / 1000 * Math.PI / 4) % (Math.PI * 2));
+	gl.clear(gl.COLOR_BUFFER_BIT);
+	gl.enableVertexAttribArray(colourAttribute);
+	gl.drawArrays(gl.TRIANGLES, 0, 64*64*2*3);
+	gl.disableVertexAttribArray(colourAttribute);
+	gl.drawArrays(gl.POINTS, 0, 64*64*2*3);
+	window.requestAnimationFrame(render);
+}
+window.requestAnimationFrame(render);
+
+  });
+</script>
+</body></html>

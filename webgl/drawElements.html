@@ -1,0 +1,204 @@
+<html><body style="margin: 0">
+<canvas id="container" style="width: 100vw; height: 100vh; display: block"></canvas>
+
+<script>
+  let canvas; let gl;
+  window.addEventListener('resize', () => {
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  if (canvas.width != width || canvas.height != height) {
+    canvas.width = width;
+    canvas.height = height;
+          
+    // we could call render() here but no need because we render continuously
+	gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  });
+  document.addEventListener('DOMContentLoaded', () => {
+
+canvas = document.getElementById('container');
+canvas.width = canvas.clientWidth;
+canvas.height = canvas.clientHeight;
+gl = canvas.getContext('webgl', { antialias: true });
+
+[["vendor", gl.VENDOR], ["renderer", gl.RENDERER], ["version", gl.VERSION],
+ ["shading language", gl.SHADING_LANGUAGE_VERSION]].forEach(
+  function(i) {
+  console.info(i[0] + ": "+ gl.getParameter(i[1]));
+  });
+
+gl.clearColor(0, 0.3, 0, 1);
+
+const sourceV = `
+  attribute vec2 a_position;
+  attribute vec2 a_center;
+  uniform float u_angle;
+  attribute vec3 a_colour;
+  varying vec3 v_colour;
+
+  void main() {
+    vec2 pos = a_position;
+	if (pos.x < 1.0) {
+	  pos.x = pos.x * 255.0 / 256.0;
+	}
+	if (pos.y < 1.0) {
+	  pos.y = pos.y * 255.0 / 256.0;
+	}
+	if (a_colour.g == 0.0) // centers in red
+	{ gl_Position = vec4(a_center * 2.0 - 1.0, 1, 1); }
+	else {
+	float c = cos(u_angle*(0.1+sqrt(a_center.x)));
+	float s = sin(u_angle*(0.1+sqrt(a_center.y)));
+	pos -= a_center;
+	pos = vec2(c * pos.x - s * pos.y, s * pos.x + c * pos.y);
+	pos += a_center;
+    gl_Position = vec4(pos * 2.0 - 1.0, 1, 1);
+	}
+    v_colour = vec3(a_colour.rg*pow(pos, vec2(0.3,0.3)),a_colour.b);
+	//v_colour = a_colour;
+	gl_PointSize = 1.0;
+  }
+`;
+
+const shaderV = gl.createShader(gl.VERTEX_SHADER);
+gl.shaderSource(shaderV, sourceV);
+gl.compileShader(shaderV);
+
+if (!gl.getShaderParameter(shaderV, gl.COMPILE_STATUS)) {
+  console.error(gl.getShaderInfoLog(shaderV));
+  throw new Error('Failed to compile vertex shader');
+}
+
+const sourceF = `
+  precision mediump float;
+  varying vec3 v_colour;
+
+  void main() {
+    gl_FragColor = vec4(v_colour, 1);
+  }
+`;
+
+const shaderF = gl.createShader(gl.FRAGMENT_SHADER);
+gl.shaderSource(shaderF, sourceF);
+gl.compileShader(shaderF);
+
+if (!gl.getShaderParameter(shaderF, gl.COMPILE_STATUS)) {
+  console.error(gl.getShaderInfoLog(shaderF));
+  throw new Error('Failed to compile fragment shader');
+}
+
+const program = gl.createProgram();
+gl.attachShader(program, shaderV);
+gl.attachShader(program, shaderF);
+gl.linkProgram(program);
+
+if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+  console.error(gl.getProgramInfoLog(program));
+  throw new Error('Failed to link program');
+}
+
+gl.useProgram(program);
+
+const triangleCount = 64*64*2;
+const vertexCount = 65*65;
+
+// 64x64 vertexes, X Y R G B each
+const bufferData = new Uint8Array(vertexCount*(2 + 3));
+// 64x64 vertexes, X Y of center each as float
+const rotationData = new Float32Array(vertexCount*2);
+let vi = 0; let ri = 0;
+const c0 = 0;
+const c1 = 255;
+const c2 = 128;
+const c3 = 100;
+const c4 = c2 + c2 - c3;
+const colours = [[c0, c2/3, c1/2], [c0, c3/2, c1], [c0, c4/3, c1], [c1, c2, c0], [c1, c3, c0], [c1, c4, c0]]
+for (let x = 0; x <= 256; x += 4) for (let y = 0; y <= 256; y += 4)
+{
+   const colour = colours[(x*64 + y) % colours.length];
+   bufferData[vi] = (x < 255 ? x : 255); bufferData[vi + 1] = (y < 255 ? y : 255);
+   bufferData[vi + 2] = colour[0];
+   bufferData[vi + 3] = colour[1];
+   bufferData[vi + 4] = colour[2];
+   vi += 5;
+   
+   rotationData[ri] = Math.random() / 50 - 1/64 + x / 256;
+   rotationData[ri + 1] = Math.random() / 50 - 1/64  + y / 256;
+   ri += 2
+}
+console.info(vi + " = " + bufferData.byteLength + " = " + bufferData.length);
+console.info(ri + " = " + rotationData.length + " ; " + rotationData.byteLength);
+
+const indexData = new Uint16Array(triangleCount*3);
+let ii = 0;
+for (let x = 0; x < 256; x += 4)
+{
+	for (let y = 0; y < 256; y += 4)
+	{
+		indexData[ii++] = y / 4 + (x * (65 / 4));
+		indexData[ii++] = y / 4 + ((x+4) * (65 / 4));
+		indexData[ii++] = (y+4) / 4 + (x * (65 / 4));
+
+		indexData[ii++] = (y+4) / 4 + (x * (65 / 4));
+		indexData[ii++] = y / 4 + ((x+4) * (65 / 4));
+		indexData[ii++] = (y+4) / 4 + ((x+4) * (65 / 4));
+	}
+}
+console.info(ii + " = " + indexData.length + " ; " + indexData.byteLength);
+console.info(65*65-1 + " = " + Math.max(...indexData));
+
+const attributeBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, bufferData, gl.STATIC_DRAW);
+
+const rotationAttributeBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, rotationAttributeBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, rotationData, gl.STATIC_DRAW);
+
+const elementIndexBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elementIndexBuffer);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexData, gl.STATIC_DRAW);
+
+gl.bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
+const posattribute = gl.getAttribLocation(program, 'a_position');
+gl.enableVertexAttribArray(posattribute);
+gl.vertexAttribPointer(posattribute, 2, gl.UNSIGNED_BYTE, true, 5, 0);
+
+const colourAttribute = gl.getAttribLocation(program, 'a_colour');
+gl.vertexAttribPointer(colourAttribute, 3, gl.UNSIGNED_BYTE, true, 5, 2);
+
+gl.bindBuffer(gl.ARRAY_BUFFER, rotationAttributeBuffer);
+const centerAttribute = gl.getAttribLocation(program, 'a_center');
+gl.enableVertexAttribArray(centerAttribute);
+gl.vertexAttribPointer(centerAttribute, 2, gl.FLOAT, false, 0, 0);
+
+const angleLocation = gl.getUniformLocation(program, 'u_angle');
+
+gl.disable(gl.CULL_FACE);
+//gl.cullFace(gl.FRONT);
+gl.disable(gl.BLEND);
+gl.blendFunc(gl.SRC_ALPHA, gl.DST_ALPHA);
+//gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+function render(timestamp){
+/*	if (gl.getParameter(gl.CULL_FACE_MODE) === gl.BACK) {
+		gl.cullFace(gl.FRONT);
+	} else {
+		gl.cullFace(gl.BACK);
+	}*/
+	gl.uniform1f(angleLocation, timestamp / 1000 * Math.PI / 3);
+	gl.clear(gl.COLOR_BUFFER_BIT);
+	gl.enableVertexAttribArray(colourAttribute);
+	gl.drawElements(gl.TRIANGLES, indexData.length, gl.UNSIGNED_SHORT, 0);
+	gl.disableVertexAttribArray(colourAttribute);
+	gl.vertexAttrib3f(colourAttribute, 0, 1.0, 0); // default colour when attrib array is disabled; vertices in green
+	gl.drawElements(gl.POINTS, indexData.length, gl.UNSIGNED_SHORT, 0);
+	gl.vertexAttrib3f(colourAttribute, 1.0, 0, 0); // default colour when attrib array is disabled; centers in red
+	gl.drawElements(gl.POINTS, indexData.length, gl.UNSIGNED_SHORT, 0);
+	window.requestAnimationFrame(render);
+}
+window.requestAnimationFrame(render);
+
+  });
+</script>
+</body></html>
