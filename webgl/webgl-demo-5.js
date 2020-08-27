@@ -7,7 +7,7 @@ main();
 //
 function main() {
   const canvas = document.querySelector('#glcanvas');
-  const gl = canvas.getContext('webgl');//WebGLDebugUtils.makeDebugContext(canvas.getContext('webgl'));
+  const gl = WebGLDebugUtils.makeDebugContext(canvas.getContext('webgl'));
 
   // If we don't have a GL context, give up now
 

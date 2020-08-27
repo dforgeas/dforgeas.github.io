@@ -27,8 +27,14 @@ gl = canvas.getContext('webgl', { antialias: true });
   function(i) {
   console.info(i[0] + ": "+ gl.getParameter(i[1]));
   });
+  
+let ext = gl.getExtension('ANGLE_instanced_arrays');
+if (! ext) alert("ANGLE_instanced_arrays isn't supported");
+const drawArraysInstanced = ext.drawArraysInstancedANGLE.bind(ext);
+const vertexAttribDivisor = ext.vertexAttribDivisorANGLE.bind(ext);
+if (! drawArraysInstanced || ! vertexAttribDivisor) alert("Couldn't initialise extention ANGLE_instanced_arrays");
 
-gl.clearColor(0, 0.3, 0, 1);
+gl.clearColor(0, 0, 0, 1);
 
 const sourceV = `
   attribute vec2 a_position;
@@ -40,29 +46,16 @@ const sourceV = `
   varying vec3 v_colour;
 
   void main() {
-	vec2 pos;
-	if (a_colour.g == 0.0) // centers in red
-	{
-		pos = vec2(a_center.x * u_aspect, a_center.y);
-		gl_Position = vec4(pos * u_zoom_factor - 1.0 / u_aspect, 1, 1);
-	} else {
-		pos = a_position;
-		if (pos.x < 1.0) {
-		  pos.x = pos.x * 255.0 / 256.0;
-		}
-		if (pos.y < 1.0) {
-		  pos.y = pos.y * 255.0 / 256.0;
-		}
-		float c = cos(u_angle*(0.1+sqrt(a_center.x)));
-		float s = sin(u_angle*(0.1+sqrt(a_center.y)));
-		pos -= a_center;
-		pos = vec2(c * pos.x - s * pos.y, s * pos.x + c * pos.y);
-		pos += a_center;
-		pos.x *= u_aspect; // apply the screen aspect ratio
-		gl_Position = vec4(pos * u_zoom_factor - 1.0 / u_aspect, 1, 1);
-	}
-	v_colour = vec3(a_colour.rg*pow(pos, vec2(0.3,0.3)),a_colour.b);
-	//v_colour = a_colour;
+    vec2 pos = a_position - (2.0 / 256.0); // cheat a little and centers around the first a_center for each instance
+	/*if (a_colour.r == 0.1) { gl_Position = vec4(a_center * 2.0 - 1.0, 1, 1); } else {*/
+	float c = cos(u_angle);
+	float s = sin(u_angle);
+	pos = vec2(c * pos.x - s * pos.y, s * pos.x + c * pos.y);
+	pos += a_center;
+	pos.x *= u_aspect; // apply the screen aspect ratio
+    gl_Position = vec4(pos * u_zoom_factor - 1.0, 1, 1);
+	/*}*/
+    v_colour = a_colour;
 	gl_PointSize = u_zoom_factor / 2.0;
   }
 `;
@@ -106,53 +99,64 @@ if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
 
 gl.useProgram(program);
 
-const triangleCount = 64*64*2;
-const vertexCount = 65*65;
-
-// 64x64 vertexes, X Y R G B each
-const bufferData = new Uint8Array(vertexCount*(2 + 3));
-// 64x64 vertexes, X Y of center each as float
-const rotationData = new Float32Array(vertexCount*2);
+// 2 triangles, 3 vertexes each, X Y R G B each
+const bufferData = new Uint8Array(2*3*(2 + 3));
 let vi = 0; let ri = 0;
-const c0 = 0;
-const c1 = 255;
-const c2 = 128;
-const c3 = 100;
-const c4 = c2 + c2 - c3;
-const colours = [[c0, c2/3, c1/2], [c0, c3/2, c1], [c0, c4/3, c1], [c1, c2, c0], [c1, c3, c0], [c1, c4, c0]]
-for (let x = 0; x <= 256; x += 4) for (let y = 0; y <= 256; y += 4)
 {
-   const colour = colours[(x*64 + y) % colours.length];
-   bufferData[vi] = (x < 255 ? x : 255); bufferData[vi + 1] = (y < 255 ? y : 255);
-   bufferData[vi + 2] = colour[0];
-   bufferData[vi + 3] = colour[1];
-   bufferData[vi + 4] = colour[2];
+   let x = 0; let y = 0;
+   const c0 = 0;
+   const c1 = 255;
+   const c2 = 128;
+   const c3 = 100;
+   const c4 = c2 + c2 - c3;
+   // 1st triangle
+   bufferData[vi] = x; bufferData[vi + 1] = y;
+   bufferData[vi + 2] = c0;
+   bufferData[vi + 3] = c2 / 2;
+   bufferData[vi + 4] = c1;
    vi += 5;
    
-   rotationData[ri] = Math.random() / 50 - 1/64 + x / 256;
-   rotationData[ri + 1] = Math.random() / 50 - 1/64  + y / 256;
-   ri += 2
+   bufferData[vi] = x; bufferData[vi + 1] = (y+4 < 255 ? y+4: 255);
+   bufferData[vi + 2] = c0;
+   bufferData[vi + 3] = c3 / 2;
+   bufferData[vi + 4] = c1;  
+   vi += 5;
+   
+   bufferData[vi] = (x+4 < 255 ? x+4 : 255); bufferData[vi + 1] = y;
+   bufferData[vi + 2] = c0;
+   bufferData[vi + 3] = c4 / 2;
+   bufferData[vi + 4] = c1;
+   vi += 5;
+   
+   // 2nd triangle
+   bufferData[vi] = (x+4 < 255 ? x+4 : 255); bufferData[vi + 1] = y;
+   bufferData[vi + 2] = c1;
+   bufferData[vi + 3] = c2;
+   bufferData[vi + 4] = c0;
+   vi += 5;
+   
+   bufferData[vi] = (x+4 < 255 ? x+4 : 255); bufferData[vi + 1] = (y+4 < 255 ? y+4: 255);
+   bufferData[vi + 2] = c1;
+   bufferData[vi + 3] = c3;
+   bufferData[vi + 4] = c0;  
+   vi += 5;
+   
+   bufferData[vi] = x; bufferData[vi + 1] = (y+4 < 255 ? y+4: 255);
+   bufferData[vi + 2] = c1;
+   bufferData[vi + 3] = c4;
+   bufferData[vi + 4] = c0;  
+   vi += 5;
 }
-console.info(vi + " = " + bufferData.byteLength + " = " + bufferData.length);
-console.info(ri + " = " + rotationData.length + " ; " + rotationData.byteLength);
-
-const indexData = new Uint16Array(triangleCount*3);
-let ii = 0;
-for (let x = 0; x < 256; x += 4)
+// 64x64 instances, X Y of center each as float
+const rotationData = new Float32Array(64*64*2);
+for (let x = 0; x < 256; x += 4) for (let y = 0; y < 256; y += 4)
 {
-	for (let y = 0; y < 256; y += 4)
-	{
-		indexData[ii++] = y / 4 + (x * (65 / 4));
-		indexData[ii++] = y / 4 + ((x+4) * (65 / 4));
-		indexData[ii++] = (y+4) / 4 + (x * (65 / 4));
-
-		indexData[ii++] = (y+4) / 4 + (x * (65 / 4));
-		indexData[ii++] = y / 4 + ((x+4) * (65 / 4));
-		indexData[ii++] = (y+4) / 4 + ((x+4) * (65 / 4));
-	}
+   rotationData[ri] = (x + 2) / 256;
+   rotationData[ri + 1] = (y + 2) / 256;
+   ri += 2;  
 }
-console.info(ii + " = " + indexData.length + " ; " + indexData.byteLength);
-console.info(65*65-1 + " = " + Math.max(...indexData));
+console.info(vi + " = " + bufferData.byteLength);
+console.info(ri + " = " + rotationData.length);
 
 const attributeBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
@@ -162,22 +166,22 @@ const rotationAttributeBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, rotationAttributeBuffer);
 gl.bufferData(gl.ARRAY_BUFFER, rotationData, gl.STATIC_DRAW);
 
-const elementIndexBuffer = gl.createBuffer();
-gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elementIndexBuffer);
-gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexData, gl.STATIC_DRAW);
-
 gl.bindBuffer(gl.ARRAY_BUFFER, attributeBuffer);
 const posattribute = gl.getAttribLocation(program, 'a_position');
 gl.enableVertexAttribArray(posattribute);
 gl.vertexAttribPointer(posattribute, 2, gl.UNSIGNED_BYTE, true, 5, 0);
+vertexAttribDivisor(posattribute, 0);
 
 const colourAttribute = gl.getAttribLocation(program, 'a_colour');
+gl.vertexAttrib3f(colourAttribute, 0, 1.0, 0); // default colour when attrib array is disabled
 gl.vertexAttribPointer(colourAttribute, 3, gl.UNSIGNED_BYTE, true, 5, 2);
+vertexAttribDivisor(colourAttribute, 0);
 
 gl.bindBuffer(gl.ARRAY_BUFFER, rotationAttributeBuffer);
 const centerAttribute = gl.getAttribLocation(program, 'a_center');
 gl.enableVertexAttribArray(centerAttribute);
 gl.vertexAttribPointer(centerAttribute, 2, gl.FLOAT, false, 0, 0);
+vertexAttribDivisor(centerAttribute, 1);
 
 const angleLocation = gl.getUniformLocation(program, 'u_angle');
 const aspectLocation = gl.getUniformLocation(program, 'u_aspect');
@@ -242,16 +246,13 @@ function render(timestamp){
 	} else {
 		gl.cullFace(gl.BACK);
 	}*/
-	gl.uniform1f(angleLocation, way * timestamp / 1000 * Math.PI / 3);
+	gl.uniform1f(angleLocation, (way * timestamp / 1000 * Math.PI / 4) % (Math.PI * 2));
 	gl.clear(gl.COLOR_BUFFER_BIT);
 	if (tick !== null) tick();
 	gl.enableVertexAttribArray(colourAttribute);
-	gl.drawElements(gl.TRIANGLES, indexData.length, gl.UNSIGNED_SHORT, 0);
+	drawArraysInstanced(gl.TRIANGLES, 0, 3*2, 64*64);
 	gl.disableVertexAttribArray(colourAttribute);
-	gl.vertexAttrib3f(colourAttribute, 0, 1.0, 0); // default colour when attrib array is disabled; vertices in green
-	gl.drawElements(gl.POINTS, indexData.length, gl.UNSIGNED_SHORT, 0);
-	gl.vertexAttrib3f(colourAttribute, 1.0, 0, 0); // default colour when attrib array is disabled; centers in red
-	gl.drawElements(gl.POINTS, indexData.length, gl.UNSIGNED_SHORT, 0);
+	drawArraysInstanced(gl.POINTS, 0, 3*2, 64*64);
 	window.requestAnimationFrame(render);
 }
 window.requestAnimationFrame(render);

@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html><body style="margin: 0">
 <canvas id="container" style="width: 100vw; height: 100vh; display: block"></canvas>
 
@@ -33,6 +34,8 @@ const sourceV = `
   attribute vec2 a_position;
   attribute vec2 a_center;
   uniform float u_angle;
+  uniform float u_aspect;
+  uniform float u_zoom_factor;
   attribute vec3 a_colour;
   varying vec3 v_colour;
 
@@ -50,10 +53,11 @@ const sourceV = `
 	pos -= a_center;
 	pos = vec2(c * pos.x - s * pos.y, s * pos.x + c * pos.y);
 	pos += a_center;
-    gl_Position = vec4(pos * 2.0 - 1.0, 1, 1);
+	pos.x *= u_aspect; // apply the screen aspect ratio
+    gl_Position = vec4(pos * u_zoom_factor - 1.0, 1, 1);
 	/*}*/
     v_colour = a_colour;
-	gl_PointSize = 2.0;
+	gl_PointSize = u_zoom_factor / 2.0;
   }
 `;
 
@@ -186,6 +190,55 @@ gl.enableVertexAttribArray(centerAttribute);
 gl.vertexAttribPointer(centerAttribute, 2, gl.FLOAT, false, 0, 0);
 
 const angleLocation = gl.getUniformLocation(program, 'u_angle');
+const aspectLocation = gl.getUniformLocation(program, 'u_aspect');
+const zoomFactorLocation = gl.getUniformLocation(program, 'u_zoom_factor');
+let zoomed = false;
+let tick = null;
+let aspect = 1; let zoomFactor = 2;
+gl.uniform1f(aspectLocation, aspect);
+gl.uniform1f(zoomFactorLocation, zoomFactor);
+function canvasClicked(mouseEvent)
+{
+   let effectDuration = mouseEvent.altKey ? 300 : 100; // frames
+   const aspectStart = aspect;
+   const zoomFactorStart = zoomFactor;
+   let aspectTarget;
+   let zoomFactorTarget;
+   if (zoomed) {
+      aspectTarget = 1; // stretch the image to fill the canvas
+      zoomFactorTarget = 2;
+      zoomed = false;
+   } else {
+      aspectTarget = canvas.height / canvas.width;
+      zoomFactorTarget = 22;
+      zoomed = true;
+   }
+   const aspectRate = (aspectTarget - aspectStart) / effectDuration;
+   const zoomRate = (zoomFactorTarget - zoomFactorStart) / effectDuration;
+   tick = function () {      
+      aspect += aspectRate;
+      if (aspectRate > 0 && aspect > aspectTarget || aspectRate < 0 && aspect < aspectTarget) {
+         aspect = aspectTarget;
+      }
+      gl.uniform1f(aspectLocation, aspect);
+      
+      zoomFactor += zoomRate;
+      if (zoomRate > 0 && zoomFactor > zoomFactorTarget || zoomRate < 0 && zoomFactor < zoomFactorTarget) {
+         zoomFactor = zoomFactorTarget;
+      }
+      gl.uniform1f(zoomFactorLocation, zoomFactor);
+      
+      if (aspect === aspectTarget && zoomFactor === zoomFactorTarget) tick = null;
+   };
+}
+
+canvas.addEventListener('click', canvasClicked, false);
+
+let way = 1;
+window.addEventListener('keydown', e => {
+   if (e.key === ' ') way *= -1;
+   else if (e.key === 'p') way = !way;
+}, false);
 
 gl.disable(gl.CULL_FACE);
 //gl.cullFace(gl.FRONT);
@@ -199,8 +252,9 @@ function render(timestamp){
 	} else {
 		gl.cullFace(gl.BACK);
 	}*/
-	gl.uniform1f(angleLocation, (timestamp / 1000 * Math.PI / 4) % (Math.PI * 2));
+	gl.uniform1f(angleLocation, (way * timestamp / 1000 * Math.PI / 4) % (Math.PI * 2));
 	gl.clear(gl.COLOR_BUFFER_BIT);
+	if (tick !== null) tick();
 	gl.enableVertexAttribArray(colourAttribute);
 	gl.drawArrays(gl.TRIANGLES, 0, 64*64*2*3);
 	gl.disableVertexAttribArray(colourAttribute);
