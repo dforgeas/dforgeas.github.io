@@ -199,7 +199,7 @@ gl.uniform1f(aspectLocation, aspect);
 gl.uniform1f(zoomFactorLocation, zoomFactor);
 function canvasClicked(mouseEvent)
 {
-   let effectDuration = mouseEvent.altKey ? 300 : 100; // frames
+   let effectDuration = mouseEvent.ctrlKey ? 300 : 100; // frames
    const aspectStart = aspect;
    const zoomFactorStart = zoomFactor;
    let aspectTarget;
