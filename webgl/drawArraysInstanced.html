@@ -20,7 +20,7 @@
 canvas = document.getElementById('container');
 canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
-gl = canvas.getContext('webgl', { antialias: true });
+gl = canvas.getContext('webgl', { depth: false, alpha: false });
 
 [["vendor", gl.VENDOR], ["renderer", gl.RENDERER], ["version", gl.VERSION],
  ["shading language", gl.SHADING_LANGUAGE_VERSION]].forEach(
